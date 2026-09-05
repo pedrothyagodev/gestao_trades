@@ -1,0 +1,607 @@
+/* ===================== SUPABASE ===================== */
+const SUPABASE_URL = "https://ntynkqgnkrguritejpns.supabase.co";
+const SUPABASE_KEY = "sb_publishable_g2X8h2Rl5LR-4k6MPYbNVQ_jX11aRbB";
+const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+/* ===================== CONSTANTES ===================== */
+const SETUPS=["132","EST-1B","EST-0B","3x3","Caixa","REV-2-1-1","REV-3-2-1","CONT-2-2-1-1","Yin Yang","Falh-Cont","CONT-03","FALH-CORR","FALH-2REV","PRO GAIN","ROMP-FAL"];
+const REGIOES=["9R","8R","7R","6R","5R","4R","3R","2R","1R","0","1S","2S","3S","4S","5S"];
+const GRAFICOS=["Renko","1min","5min","Diário"];
+const ASSETS=["WIN","WDO"];
+const MESES=["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
+const ICONS={
+  dashboard:`<svg viewBox="0 0 24 24"><polyline points="3 17 9 11 13 15 21 6"/><polyline points="15 6 21 6 21 12"/></svg>`,
+  diario:`<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>`,
+  registrar:`<svg viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`,
+  relatorios:`<svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg>`,
+  config:`<svg viewBox="0 0 24 24"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>`,
+  download:`<svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`,
+  stats:`<svg viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>`,
+  shield:`<svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>`,
+  chevron:`<svg viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>`,
+};
+const DEFAULT_CONFIG={
+  contratosPadrao:{WIN:5,WDO:5},valorPonto:{WIN:0.2,WDO:10},
+  stopGain:{WIN:500,WDO:8},stopLoss:{WIN:250,WDO:4},
+  custoContrato:{WIN:0,WDO:0},imposto:20,
+  regra:{ate:50000,passoAntes:1000,passoDepois:2000},
+  projecao:{resultadoMensal:null,contratosBase:5,meses:12},
+  blindagem:{maxStops:3,maxOps:5,limiteHora:12},
+};
+const nowYear=new Date().getFullYear();
+const state={
+  user:null,trades:[],movs:[],config:structuredClone(DEFAULT_CONFIG),
+  loaded:false,view:"dashboard",modal:null,
+  filtroAtivo:"todos",sideOpen:false,
+  openGroups:{registrar:true,relatorios:false,analise:true},
+  cgAno:nowYear,cgProjecao:false,rmAno:nowYear,_movTipo:"aporte",
+};
+function mergeConfig(d){return{
+  contratosPadrao:{...DEFAULT_CONFIG.contratosPadrao,...(d.contratosPadrao||{})},
+  valorPonto:{...DEFAULT_CONFIG.valorPonto,...(d.valorPonto||{})},
+  stopGain:{...DEFAULT_CONFIG.stopGain,...(d.stopGain||{})},
+  stopLoss:{...DEFAULT_CONFIG.stopLoss,...(d.stopLoss||{})},
+  custoContrato:{...DEFAULT_CONFIG.custoContrato,...(d.custoContrato||{})},
+  imposto:d.imposto??DEFAULT_CONFIG.imposto,
+  regra:{...DEFAULT_CONFIG.regra,...(d.regra||{})},
+  projecao:{...DEFAULT_CONFIG.projecao,...(d.projecao||{})},
+  blindagem:{...DEFAULT_CONFIG.blindagem,...(d.blindagem||{})},
+};}
+
+/* ===================== HELPERS ===================== */
+const el=id=>document.getElementById(id);
+const todayISO=()=>new Date().toLocaleDateString("sv-SE");
+const nowHour=()=>new Date().getHours();
+const brl=v=>(v<0?"-":"")+"R$ "+Math.abs(v).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
+const dateBR=iso=>{const[y,m,d]=iso.split("-");return `${d}/${m}/${y}`;};
+const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const uid=()=>Math.random().toString(36).slice(2,10)+Date.now().toString(36).slice(-4);
+const tradeValor=t=>t.pontos*t.contratos*(state.config.valorPonto[t.ativo]??0);
+function ordena(a,b){return a.data<b.data?-1:a.data>b.data?1:(a.ts<b.ts?-1:1);}
+function contratosParaBanca(b){const r=state.config.regra;if(b<=0)return 0;if(b<=r.ate)return Math.max(1,Math.floor(b/r.passoAntes));return Math.floor(r.ate/r.passoAntes)+Math.floor((b-r.ate)/r.passoDepois);}
+
+/* ===================== AUTH ===================== */
+async function entrar(){
+  const email=el("lg-email").value.trim(),password=el("lg-pass").value;
+  el("lg-err").textContent="";
+  if(!email||!password){el("lg-err").textContent="Preencha e-mail e senha.";return;}
+  const{error}=await db.auth.signInWithPassword({email,password});
+  if(error)el("lg-err").textContent=traduzErro(error.message);
+}
+async function criarConta(){
+  const email=el("lg-email").value.trim(),password=el("lg-pass").value;
+  el("lg-err").textContent="";
+  if(!email||password.length<6){el("lg-err").textContent="E-mail e senha com ao menos 6 caracteres.";return;}
+  const{data,error}=await db.auth.signUp({email,password});
+  if(error){el("lg-err").textContent=traduzErro(error.message);return;}
+  if(data.user&&!data.session){el("lg-err").style.color="var(--accent)";el("lg-err").textContent="Conta criada! Entre com suas credenciais.";}
+}
+function traduzErro(m){
+  if(/Invalid login/i.test(m))return "E-mail ou senha incorretos.";
+  if(/already registered/i.test(m))return "Este e-mail já tem conta. É só entrar.";
+  if(/rate limit/i.test(m))return "Muitas tentativas. Aguarde um momento.";
+  return m;
+}
+async function sair(){await db.auth.signOut();}
+
+/* ===================== DADOS ===================== */
+async function carregar(){
+  const uid_=state.user.id;
+  const[tr,mv,cf]=await Promise.all([
+    db.from("trades").select("*").eq("user_id",uid_).order("data",{ascending:true}).order("ts",{ascending:true}),
+    db.from("movimentacoes").select("*").eq("user_id",uid_).order("data",{ascending:true}).order("ts",{ascending:true}),
+    db.from("config").select("dados").eq("user_id",uid_).maybeSingle(),
+  ]);
+  state.trades=tr.data||[];
+  state.movs=mv.data||[];
+  if(cf.data?.dados)state.config=mergeConfig(cf.data.dados);
+  state.loaded=true;
+  render();
+}
+async function addTrade(f){
+  const row={id:uid(),user_id:state.user.id,ts:Date.now(),...f};
+  const{error}=await db.from("trades").insert(row);
+  if(error){alert("Erro ao salvar: "+error.message);return false;}
+  state.trades.push(row);state.trades.sort(ordena);return true;
+}
+async function addMov(f){
+  const row={id:uid(),user_id:state.user.id,ts:Date.now(),...f};
+  const{error}=await db.from("movimentacoes").insert(row);
+  if(error){alert("Erro ao salvar: "+error.message);return false;}
+  state.movs.push(row);state.movs.sort(ordena);return true;
+}
+async function delTrade(id){
+  if(!confirm("Excluir esta operação?"))return;
+  await db.from("trades").delete().eq("id",id);
+  state.trades=state.trades.filter(t=>t.id!==id);render();
+}
+async function delMov(id){
+  if(!confirm("Excluir esta movimentação?"))return;
+  await db.from("movimentacoes").delete().eq("id",id);
+  state.movs=state.movs.filter(m=>m.id!==id);render();
+}
+async function salvarConfig(){
+  await db.from("config").upsert({user_id:state.user.id,dados:state.config,updated_at:new Date().toISOString()});
+}
+
+/* ===================== CÁLCULOS ===================== */
+function calc(){
+  const ap=state.movs.filter(m=>m.tipo==="aporte").reduce((s,m)=>s+Number(m.valor),0);
+  const re=state.movs.filter(m=>m.tipo==="retirada").reduce((s,m)=>s+Number(m.valor),0);
+  const ops=state.trades.reduce((s,t)=>s+tradeValor(t),0);
+  const investido=ap-re,saldo=investido+ops;
+  return{ap,re,ops,investido,saldo,rendPct:ap>0?ops/ap*100:0};
+}
+function porDia(){
+  const map={};
+  for(const t of state.trades){
+    if(!map[t.data])map[t.data]={win:{p:0,v:0},wdo:{p:0,v:0},total:0,count:0,stops:0};
+    const k=t.ativo==="WIN"?"win":"wdo",v=tradeValor(t);
+    map[t.data][k].p+=t.pontos;map[t.data][k].v+=v;map[t.data].total+=v;map[t.data].count++;
+    if(v<0)map[t.data].stops++;
+  }
+  return map;
+}
+function blindagemHoje(){const hoje=todayISO(),d=porDia()[hoje]||{count:0,stops:0};return{ops:d.count,stops:d.stops};}
+function statsSetup(setup){
+  const ts=setup==="todos"?state.trades:state.trades.filter(t=>t.setup===setup);
+  if(!ts.length)return null;
+  const vs=ts.map(tradeValor);
+  const wins=vs.filter(v=>v>0),losses=vs.filter(v=>v<0);
+  const avgG=wins.length?wins.reduce((a,b)=>a+b,0)/wins.length:0;
+  const avgL=losses.length?Math.abs(losses.reduce((a,b)=>a+b,0)/losses.length):0;
+  return{count:ts.length,gains:wins.length,losses:losses.length,acerto:wins.length/ts.length*100,avgGain:avgG,avgLoss:avgL,payoff:avgL>0?avgG/avgL:null,resultado:vs.reduce((a,b)=>a+b,0)};
+}
+function calcRiscoRuina(){
+  const s=statsSetup("todos");if(!s||s.count<5)return null;
+  const capital=calc().saldo;if(capital<=0||s.avgGain===0||s.avgLoss===0)return null;
+  const p=s.acerto/100,rr=s.avgGain/s.avgLoss,x=(1-p)/p*(1/rr),n=capital/s.avgLoss;
+  return{acerto:s.acerto,avgGain:s.avgGain,avgLoss:s.avgLoss,rr,capital,ruin:x>=1?100:Math.min(100,Math.pow(x,n)*100)};
+}
+function resumoMensal(ano){
+  const meses=Array.from({length:12},()=>({resultado:0,count:0,wins:0}));
+  for(const t of state.trades){const[y,m]=t.data.split("-").map(Number);if(y!==ano)continue;const v=tradeValor(t);meses[m-1].resultado+=v;meses[m-1].count++;if(v>0)meses[m-1].wins++;}
+  return meses.map(m=>({...m,acerto:m.count?m.wins/m.count*100:0}));
+}
+function capitalGiro(ano,proj){
+  const meses=Array.from({length:12},()=>({receber:0,taxas:0}));
+  if(!proj){for(const t of state.trades){const[y,m]=t.data.split("-").map(Number);if(y!==ano)continue;meses[m-1].receber+=tradeValor(t);meses[m-1].taxas+=(state.config.custoContrato[t.ativo]||0)*t.contratos;}}
+  else{const dias=Object.values(porDia()),sug=dias.length?Math.round(dias.reduce((s,d)=>s+d.total,0)/dias.length*21):0;const base=state.config.projecao.resultadoMensal||sug,cb=state.config.projecao.contratosBase||1,porC=base/cb;let sal=calc().saldo||base;for(let i=0;i<12;i++){const c=contratosParaBanca(sal),r=porC*c;meses[i].receber=r;sal+=r;}}
+  const taxa=(state.config.imposto||0)/100;let prej=0;
+  return meses.map(mes=>{const base=mes.receber-mes.taxas;let imp=0;if(base<=0)prej+=-base;else{const c=Math.min(prej,base);prej-=c;imp=(base-c)*taxa;}return{receber:mes.receber,pagar:mes.taxas+imp,geracao:mes.receber-(mes.taxas+imp)};});
+}
+function projecao(saldo){
+  const p=state.config.projecao,dias=Object.values(porDia()),sug=dias.length?Math.round(dias.reduce((s,d)=>s+d.total,0)/dias.length*21):null;
+  const base=p.resultadoMensal??sug,cb=p.contratosBase||1;if(!base||saldo<=0)return[];
+  const porC=base/cb,linhas=[];let b=saldo;
+  for(let i=1;i<=p.meses;i++){const c=contratosParaBanca(b),res=porC*c,fim=b+res;linhas.push({mes:i,ini:b,contratos:c,res,fim});b=fim;}
+  return linhas;
+}
+
+/* ===================== RENDER ===================== */
+const PAGES={
+  dashboard:{title:"Dashboard",sub:"Visão geral da carteira"},
+  diario:{title:"Diário de Trades",sub:"Operações com setup, região e gatilho"},
+  caixa:{title:"Aportes e retiradas",sub:"Entradas e saídas de capital"},
+  estatisticas:{title:"Painel de Estatísticas",sub:"Desempenho por setup — acerto, payoff e resultado"},
+  blindagem:{title:"Blindagem Operacional",sub:"Limite de stops, operações e horário por dia"},
+  capitalgiro:{title:"Capital de Giro",sub:"Recebimentos, custos e geração de caixa por mês"},
+  resumomensal:{title:"Resumo Mensal",sub:"Resultado mês a mês e acerto anual"},
+  porativo:{title:"Desempenho por Ativo",sub:"Comparação WIN vs WDO"},
+  projecao:{title:"Projeção de Banca",sub:"Evolução estimada com escala de contratos"},
+  config:{title:"Configurações",sub:"Parâmetros, stops, custos e blindagem"},
+};
+function render(){
+  if(!state.loaded){el("app").innerHTML=`<div class="loading">carregando…</div>`;return;}
+  el("app").innerHTML=`
+    <div id="backdrop" class="backdrop ${state.sideOpen?"show":""}"></div>
+    <aside id="sidebar" class="sidebar ${state.sideOpen?"open":""}">${sidebarHTML()}</aside>
+    <main class="main">
+      <div class="topbar">
+        <div style="display:flex;align-items:flex-start;gap:12px">
+          <button id="hamb" class="hamburger">☰</button>
+          <div><h1 class="page-title">${PAGES[state.view].title}</h1><p class="page-sub">${PAGES[state.view].sub}</p></div>
+        </div>
+        <div class="toolbar">${toolbarHTML()}</div>
+      </div>
+      <div class="content">${contentHTML()}</div>
+    </main>`;
+  el("modal-mount").innerHTML=state.modal?modalHTML():"";
+  liga();
+}
+function sidebarHTML(){
+  const email=state.user?.email||"";
+  const item=(v,ico,label)=>`<button class="nav-item ${state.view===v?"on":""}" data-view="${v}"><span class="nav-ico">${ICONS[ico]}</span>${label}</button>`;
+  const group=(key,ico,label,children)=>{const open=state.openGroups[key];return `<div class="nav-section"><button class="nav-head" data-group="${key}"><span class="nav-ico">${ICONS[ico]}</span><span style="flex:1">${label}</span><span class="chev ${open?"open":""}">${ICONS.chevron}</span></button><div class="nav-children" style="${open?"":"display:none"}">${children.map(ch=>`<button class="nav-sub ${state.view===ch.v?"on":""}" data-view="${ch.v}">${ch.l}</button>`).join("")}</div></div>`;};
+  return `
+    <div class="side-brand"><div class="brand-mark">GM</div><div class="brand-name">Gestão Milionária</div></div>
+    <div class="nav-scroll">
+      ${item("dashboard","dashboard","Dashboard")}
+      ${item("diario","diario","Diário de Trades")}
+      ${group("registrar","registrar","Registrar",[{v:"caixa",l:"Aportes e retiradas"}])}
+      ${group("analise","stats","Análise",[{v:"estatisticas",l:"Painel de Estatísticas"},{v:"blindagem",l:"Blindagem Operacional"},{v:"porativo",l:"Desempenho por Ativo"}])}
+      ${group("relatorios","relatorios","Relatórios",[{v:"capitalgiro",l:"Capital de Giro"},{v:"resumomensal",l:"Resumo Mensal"},{v:"projecao",l:"Projeção de Banca"}])}
+      ${item("config","config","Configurações")}
+      <button class="nav-item" id="nav-export"><span class="nav-ico">${ICONS.download}</span>Exportar CSV</button>
+    </div>
+    <div class="side-foot">
+      <div class="side-user">
+        <div class="side-avatar">${esc((email[0]||"?").toUpperCase())}</div>
+        <div class="side-email">${esc(email)}</div>
+        <button class="btn-sair" id="nav-sair">Sair</button>
+      </div>
+    </div>`;
+}
+function toolbarHTML(){
+  if(state.view==="diario") return `<div class="seg-inline"><button data-filtro="todos" class="${state.filtroAtivo==="todos"?"on":""}">Todos</button><button data-filtro="WIN" class="${state.filtroAtivo==="WIN"?"on":""}">WIN</button><button data-filtro="WDO" class="${state.filtroAtivo==="WDO"?"on":""}">WDO</button></div><button class="btn" id="add-op">+ Registrar operação</button>`;
+  if(state.view==="caixa") return `<button class="btn" id="add-mov">+ Adicionar movimentação</button>`;
+  if(state.view==="capitalgiro") return `<label class="toggle-lbl"><span class="switch"><input type="checkbox" id="cg-proj" ${state.cgProjecao?"checked":""}><span class="track"></span></span>Modo projeção</label><div class="seg-inline"><button id="cg-prev">‹</button><button class="ynow">${state.cgAno}</button><button id="cg-next">›</button></div>`;
+  if(state.view==="resumomensal") return `<div class="seg-inline"><button id="rm-prev">‹</button><button class="ynow">${state.rmAno}</button><button id="rm-next">›</button></div>`;
+  return "";
+}
+function contentHTML(){
+  switch(state.view){
+    case "dashboard": return dashboardHTML();
+    case "diario": return diarioHTML();
+    case "caixa": return caixaHTML();
+    case "estatisticas": return estatisticasHTML();
+    case "blindagem": return blindagemHTML();
+    case "capitalgiro": return capitalGiroHTML();
+    case "resumomensal": return resumoMensalHTML();
+    case "porativo": return porAtivoHTML();
+    case "projecao": return projecaoHTML();
+    case "config": return configHTML();
+  }
+}
+
+/* ===== DASHBOARD ===== */
+function dashboardHTML(){
+  const c=calc(),dias=porDia(),hoje=todayISO(),h=dias[hoje]||{win:{p:0,v:0},wdo:{p:0,v:0},total:0,count:0,stops:0};
+  const bl=blindagemHoje(),blim=state.config.blindagem;
+  let alerts="";
+  if(bl.stops>=blim.maxStops)alerts+=`<div class="banner loss">🛑 Limite de stops atingido (${bl.stops}/${blim.maxStops}). Encerre o dia.</div>`;
+  if(bl.ops>=blim.maxOps)alerts+=`<div class="banner warn">⚠️ Limite de operações atingido (${bl.ops}/${blim.maxOps}).</div>`;
+  if(nowHour()>=blim.limiteHora)alerts+=`<div class="banner warn">⚠️ Horário limite de entradas passou (${blim.limiteHora}:00).</div>`;
+  if(!state.trades.length&&!state.movs.length)alerts+=`<div class="banner info">Comece registrando um aporte e suas operações no Diário de Trades.</div>`;
+  const s=statsSetup("todos");
+  return `${alerts}
+    <div class="stat-grid">
+      <div class="stat"><div class="l">Saldo atual</div><div class="v">${brl(c.saldo)}</div><div class="d">investido ${brl(c.investido)}</div></div>
+      <div class="stat"><div class="l">Lucro das operações</div><div class="v" style="color:${c.ops>0?"var(--gain)":c.ops<0?"var(--loss)":"var(--ink)"}">${c.ops===0?"—":brl(c.ops)}</div><div class="d">${c.ops>=0?"▲":"▼"} ${Math.abs(c.rendPct).toFixed(1)}% sobre o aportado</div></div>
+      <div class="stat"><div class="l">Taxa de acerto</div><div class="v">${s?s.acerto.toFixed(0)+"%":"—"}</div><div class="d">${s?s.gains+" gains · "+s.losses+" losses":""}</div></div>
+      <div class="stat"><div class="l">Resultado hoje</div><div class="v" style="color:${h.total>0?"var(--gain)":h.total<0?"var(--loss)":"var(--ink)"}">${h.total===0?"—":brl(h.total)}</div><div class="d">${h.count} operações · ${h.stops} stops</div></div>
+    </div>
+    <div class="grid2">
+      <div class="card"><div class="card-title">Hoje por ativo</div><div style="margin-top:12px;display:flex;flex-direction:column;gap:12px">
+        ${ASSETS.map(a=>{const k=a==="WIN"?"win":"wdo",p=h[k].p,v=h[k].v,pos=p>=0,alvo=pos?state.config.stopGain[a]:state.config.stopLoss[a],pr=alvo>0?Math.min(100,Math.abs(p)/alvo*100):0;return `<div class="subcard"><div style="display:flex;justify-content:space-between;font-family:var(--fontNum);font-size:13px;font-weight:700"><span>${a}</span><span style="color:${p===0?"var(--inkSoft)":pos?"var(--gain)":"var(--loss)"}">${p===0?"0 pts":(p>0?"+":"")+p+" pts"}</span></div><div style="background:var(--line);border-radius:99px;height:7px;overflow:hidden;margin-top:8px"><div style="width:${pr}%;height:100%;border-radius:99px;background:${pos?"var(--gain)":"var(--loss)"}"></div></div><div class="muted" style="margin-top:6px;font-size:11px">${brl(v)} · meta ${state.config.stopGain[a]}pts / limite -${state.config.stopLoss[a]}pts</div></div>`;}).join("")}
+      </div></div>
+      <div class="card"><div class="card-title">Evolução do saldo</div>${curvaSVG(c)}</div>
+    </div>
+    ${s?`<div class="card"><div class="card-title">Métricas gerais</div><div class="metrics">${[{v:s.count,l:"operações"},{v:s.acerto.toFixed(0)+"%",l:"taxa de acerto"},{v:s.payoff?s.payoff.toFixed(2)+" : 1":"—",l:"payoff realizado"},{v:brl(s.avgGain),l:"média de gain"},{v:brl(s.avgLoss),l:"média de loss"}].map(it=>`<div class="mini"><div class="v">${it.v}</div><div class="l">${it.l}</div></div>`).join("")}</div></div>`:`<div class="card"><div class="empty">Registre operações no Diário pra ver as métricas.</div></div>`}`;
+}
+function curvaSVG(c){
+  const ev=[];
+  for(const t of state.trades)ev.push({data:t.data,ts:t.ts,delta:tradeValor(t)});
+  for(const m of state.movs)ev.push({data:m.data,ts:m.ts,delta:m.tipo==="aporte"?Number(m.valor):-Number(m.valor)});
+  ev.sort((a,b)=>a.data<b.data?-1:a.data>b.data?1:(a.ts<b.ts?-1:1));
+  let acc=0;const s=[0];for(const e of ev){acc+=e.delta;s.push(acc);}
+  if(s.length<2)return `<div class="empty" style="padding:24px 10px">Sem dados ainda.</div>`;
+  const w=560,h=140,p=8,min=Math.min(...s),max=Math.max(...s),range=(max-min)||1,step=(w-p*2)/(s.length-1);
+  const pts=s.map((v,i)=>`${p+i*step},${p+(h-p*2)*(1-(v-min)/range)}`);
+  const pos=s[s.length-1]>=s[0],cor=pos?"var(--gain)":"var(--loss)";
+  return `<svg viewBox="0 0 ${w} ${h}" style="width:100%;height:auto;margin-top:10px" preserveAspectRatio="none"><polygon points="${p},${h-p} ${pts.join(" ")} ${w-p},${h-p}" fill="${cor}" opacity="0.1"/><polyline points="${pts.join(" ")}" fill="none" stroke="${cor}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/></svg>`;
+}
+
+/* ===== DIÁRIO ===== */
+function diarioHTML(){
+  let lista=[...state.trades].sort((a,b)=>ordena(b,a));
+  if(state.filtroAtivo!=="todos")lista=lista.filter(t=>t.ativo===state.filtroAtivo);
+  const total=lista.reduce((s,t)=>s+tradeValor(t),0),totalPts=lista.reduce((s,t)=>s+t.pontos,0);
+  if(!lista.length)return `<div class="table-wrap"><div class="empty">Nenhuma operação ainda. Clique em "+ Registrar operação".</div></div>`;
+  return `<div class="table-wrap"><div class="tscroll"><table>
+    <thead><tr><th>Data</th><th>Horário</th><th class="c">C/V</th><th>Ativo</th><th>Região</th><th>Estrutura</th><th>Setup</th><th class="c">Gráfico</th><th class="r">Qtd</th><th class="r">Pontos</th><th class="r">Resultado</th><th class="r">Ações</th></tr></thead>
+    <tbody>${lista.map(t=>{const v=tradeValor(t);return `<tr>
+      <td>${dateBR(t.data)}</td><td class="cell-muted">${t.horario||"—"}</td>
+      <td class="c"><span class="badge ${t.cv==="C"?"compra":"venda"}">${t.cv||"—"}</span></td>
+      <td><span class="badge ${t.ativo==="WIN"?"win":"wdo"}">${t.ativo}</span></td>
+      <td class="cell-muted">${esc(t.regiao)||"—"}</td>
+      <td style="font-size:12px;max-width:120px;overflow:hidden;text-overflow:ellipsis">${esc(t.estrutura)||"—"}</td>
+      <td><span style="font-size:11px;background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:2px 7px;color:var(--inkSoft)">${esc(t.setup)||"—"}</span></td>
+      <td class="c cell-muted">${esc(t.grafico)||"—"}</td>
+      <td class="r">${t.contratos}</td>
+      <td class="r ${t.pontos>=0?"pos":"neg"}">${t.pontos>0?"+":""}${t.pontos}</td>
+      <td class="r ${v>=0?"pos":"neg"}" style="font-weight:700">${brl(v)}</td>
+      <td class="r"><button class="icon-act" data-del-trade="${t.id}">✕</button></td>
+    </tr>`;}).join("")}</tbody>
+    <tfoot><tr><td colspan="9" class="cell-muted">${lista.length} operações</td><td class="r ${totalPts>=0?"pos":"neg"}">${totalPts>0?"+":""}${totalPts} pts</td><td class="r ${total>=0?"pos":"neg"}">${brl(total)}</td><td></td></tr></tfoot>
+  </table></div></div>`;
+}
+
+/* ===== APORTES ===== */
+function caixaHTML(){
+  const lista=[...state.movs].sort((a,b)=>ordena(b,a)),c=calc();
+  if(!lista.length)return `<div class="table-wrap"><div class="empty">Nenhum aporte ou retirada ainda.</div></div>`;
+  return `<div class="table-wrap"><div class="tscroll"><table>
+    <thead><tr><th>Data</th><th>Tipo</th><th class="r">Valor</th><th>Nota</th><th class="r">Ações</th></tr></thead>
+    <tbody>${lista.map(m=>{const ap=m.tipo==="aporte";return `<tr><td>${dateBR(m.data)}</td><td><span class="badge ${ap?"ap":"re"}">${m.tipo}</span></td><td class="r ${ap?"pos":"neg"}" style="font-weight:700">${ap?"+":"-"}${brl(Number(m.valor))}</td><td class="cell-muted">${esc(m.nota)||"—"}</td><td class="r"><button class="icon-act" data-del-mov="${m.id}">✕</button></td></tr>`;}).join("")}</tbody>
+  </table>
+  <div class="tfoot-row"><div><div class="t">aportado</div><div class="n pos">${brl(c.ap)}</div></div><div><div class="t">retirado</div><div class="n neg">${brl(c.re)}</div></div><div><div class="t">líquido</div><div class="n">${brl(c.investido)}</div></div></div></div>`;
+}
+
+/* ===== ESTATÍSTICAS ===== */
+function estatisticasHTML(){
+  const total=statsSetup("todos"),rr=calcRiscoRuina();
+  return `<div class="table-wrap" style="margin-bottom:16px"><div class="tscroll"><table>
+    <thead><tr><th>Estratégia</th><th class="r">Gain</th><th class="r">Loss</th><th class="r">Total</th><th class="r">% Acerto</th><th class="r">Média Gain</th><th class="r">Média Loss</th><th class="r">Relação</th><th class="r">Resultado</th></tr></thead>
+    <tbody>${SETUPS.map(s=>{const st=statsSetup(s);return `<tr>
+      <td style="font-weight:600">${s}</td>
+      <td class="r pos">${st?st.gains:0}</td><td class="r neg">${st?st.losses:0}</td><td class="r">${st?st.count:0}</td>
+      <td class="r ${st&&st.acerto>=50?"pos":"neg"}">${st?st.acerto.toFixed(0)+"%":"—"}</td>
+      <td class="r">${st?brl(st.avgGain):"—"}</td><td class="r">${st?brl(st.avgLoss):"—"}</td>
+      <td class="r ${st&&st.payoff&&st.payoff>=1?"pos":"neg"}">${st&&st.payoff?st.payoff.toFixed(2)+" : 1":"—"}</td>
+      <td class="r ${st&&st.resultado>=0?"pos":"neg"}" style="font-weight:700">${st?brl(st.resultado):"—"}</td>
+    </tr>`;}).join("")}</tbody>
+    <tfoot><tr><td><strong>TOTAIS</strong></td><td class="r pos">${total?total.gains:0}</td><td class="r neg">${total?total.losses:0}</td><td class="r">${total?total.count:0}</td><td class="r ${total&&total.acerto>=50?"pos":"neg"}">${total?total.acerto.toFixed(0)+"%":"—"}</td><td class="r">${total?brl(total.avgGain):"—"}</td><td class="r">${total?brl(total.avgLoss):"—"}</td><td class="r">${total&&total.payoff?total.payoff.toFixed(2)+" : 1":"—"}</td><td class="r ${total&&total.resultado>=0?"pos":"neg"}" style="font-weight:700">${total?brl(total.resultado):"—"}</td></tr></tfoot>
+  </table></div></div>
+  <div class="grid2">
+    <div class="card"><div class="card-title">Risco de Ruína</div>
+      ${rr?`<div class="metrics" style="margin-top:10px">${[{v:rr.acerto.toFixed(0)+"%",l:"taxa de acerto"},{v:brl(rr.avgGain),l:"média gain"},{v:brl(rr.avgLoss),l:"média loss"},{v:rr.rr.toFixed(2)+" : 1",l:"R:R realizado"}].map(it=>`<div class="mini"><div class="v">${it.v}</div><div class="l">${it.l}</div></div>`).join("")}</div>
+      <div style="margin-top:14px;border-top:1px solid var(--line);padding-top:14px;display:flex;align-items:center;gap:14px"><div style="font-family:var(--fontNum);font-size:32px;font-weight:700;color:${rr.ruin<1?"var(--gain)":rr.ruin<10?"#F59E0B":"var(--loss)"}">${rr.ruin.toFixed(4)}%</div><div><div style="font-weight:700">Risk of Ruin</div><div class="muted" style="font-size:11.5px">ideal: menor que 0,5%</div></div></div>`
+      :`<div class="empty" style="padding:20px 10px">Registre ao menos 5 operações.</div>`}
+    </div>
+    <div class="card"><div class="card-title">% Acerto × Payoff</div>${rrMatriz()}</div>
+  </div>`;
+}
+function rrMatriz(){
+  const linhas=[20,30,40,50,60,70],cols=[{l:"1×1",r:1},{l:"1×1,5",r:1.5},{l:"1×2",r:2},{l:"1×2,5",r:2.5},{l:"1×3",r:3}];
+  const cor=(p,r)=>{const ev=p/100*r-(1-p/100);return ev>0.3?"#0d3321":ev>0?"#1c3a10":ev>-0.1?"#2a2010":"#2a1015";};
+  const txt=(p,r)=>{const ev=p/100*r-(1-p/100);return ev>0.3?"var(--gain)":ev>0?"#86efac":ev>-0.1?"#F59E0B":"var(--loss)";};
+  const lab=(p,r)=>{const ev=p/100*r-(1-p/100);return ev>0.3?"Super Lucrativo":ev>0?"Positivo":ev>-0.1?"Neutro":"Negativo";};
+  const atual=calcRiscoRuina();
+  return `<div style="overflow-x:auto;margin-top:10px"><table style="width:100%;border-collapse:separate;border-spacing:3px">
+    <thead><tr><th style="text-align:right;color:var(--inkFaint);font-size:10px;padding:4px 6px">% / R:R</th>${cols.map(c=>`<th style="text-align:center;color:var(--inkFaint);font-size:10px;padding:4px">${c.l}</th>`).join("")}</tr></thead>
+    <tbody>${linhas.map(p=>`<tr><td style="color:var(--inkSoft);font-size:11px;text-align:right;padding:4px 8px">${p}%</td>${cols.map(({r})=>{const ia=atual&&Math.abs(atual.acerto-p)<8&&Math.abs(atual.rr-r)<0.4;return `<td style="background:${cor(p,r)};border-radius:5px;padding:7px 4px;text-align:center;font-size:9.5px;font-weight:700;color:${txt(p,r)};border:${ia?"2px solid var(--accent)":"2px solid transparent"}">${lab(p,r)}</td>`;}).join("")}</tr>`).join("")}</tbody>
+  </table>${atual?`<p class="muted" style="font-size:11px;margin-top:8px">Sua posição: ${atual.acerto.toFixed(0)}% acerto · payoff ${atual.rr.toFixed(2)} : 1</p>`:""}</div>`;
+}
+
+/* ===== BLINDAGEM ===== */
+function blindagemHTML(){
+  const bl=blindagemHoje(),blim=state.config.blindagem,hora=nowHour();
+  const horaOk=hora<blim.limiteHora;
+  const ss=bl.stops>=blim.maxStops?"danger":bl.stops>=blim.maxStops-1?"warn":"ok";
+  const os=bl.ops>=blim.maxOps?"danger":bl.ops>=blim.maxOps-1?"warn":"ok";
+  const hs=horaOk?"ok":"danger";
+  const cor=s=>s==="danger"?"var(--loss)":s==="warn"?"#F59E0B":"var(--gain)";
+  return `<div class="blind-grid">
+    <div class="blind-card ${ss}"><div class="bc-num" style="color:${cor(ss)}">${bl.stops}</div><div class="bc-label">stops hoje</div><div class="bc-limit" style="color:${ss==="ok"?"var(--inkSoft)":"var(--loss)"}">limite: ${blim.maxStops}</div></div>
+    <div class="blind-card ${os}"><div class="bc-num" style="color:${cor(os)}">${bl.ops}</div><div class="bc-label">operações hoje</div><div class="bc-limit" style="color:${os==="ok"?"var(--inkSoft)":"var(--loss)"}">limite: ${blim.maxOps}</div></div>
+    <div class="blind-card ${hs}"><div class="bc-num" style="color:${cor(hs)}">${hora}h</div><div class="bc-label">horário atual</div><div class="bc-limit" style="color:${hs==="ok"?"var(--inkSoft)":"var(--loss)"}">limite: ${blim.limiteHora}:00</div></div>
+  </div>
+  ${ss==="danger"?`<div class="banner loss">🛑 Limite de stops atingido. Encerre o dia.</div>`:""}
+  ${os==="danger"?`<div class="banner warn">⚠️ Limite de operações atingido.</div>`:""}
+  ${!horaOk?`<div class="banner warn">⚠️ Horário de entradas encerrado.</div>`:""}
+  <div class="card"><div class="card-title">Regras da Blindagem</div><div style="margin-top:12px;display:flex;flex-direction:column;gap:10px">
+    ${[[`1. Limite de ${blim.maxStops} stops por dia`,ss],[`2. Limite de ${blim.maxOps} operações por dia`,os],[`3. Entradas somente até ${blim.limiteHora}:00`,hs]].map(([t,s])=>`<div style="display:flex;align-items:center;gap:12px;padding:12px 14px;background:var(--bg);border-radius:10px;border:1px solid var(--lineSoft)"><span style="font-size:18px">${s==="ok"?"✅":s==="warn"?"⚠️":"🛑"}</span><span style="font-size:13.5px;font-weight:500">${t}</span></div>`).join("")}
+  </div><p class="muted" style="margin-top:14px;font-size:12px">Ajuste os limites em Configurações.</p></div>`;
+}
+
+/* ===== CAPITAL DE GIRO ===== */
+function capitalGiroHTML(){
+  const linhas=capitalGiro(state.cgAno,state.cgProjecao);
+  const totR=linhas.reduce((s,l)=>s+l.receber,0),totP=linhas.reduce((s,l)=>s+l.pagar,0),totG=linhas.reduce((s,l)=>s+l.geracao,0);
+  const cell=v=>v===0?`<span style="color:var(--inkFaint)">R$ 0,00</span>`:brl(v);
+  return `<div class="card" style="padding:0;overflow:hidden"><div class="cg-scroll"><table>
+    <thead><tr><th class="sticky-col">Capital de Giro${state.cgProjecao?" · projeção":""}</th>${MESES.map(m=>`<th class="r">${m}</th>`).join("")}<th class="r">Total</th></tr></thead>
+    <tbody>
+      <tr><td class="sticky-col" style="color:var(--blue);font-weight:600">Contas a Receber</td>${linhas.map(l=>`<td class="r">${cell(l.receber)}</td>`).join("")}<td class="r" style="font-weight:700">${brl(totR)}</td></tr>
+      <tr><td class="sticky-col" style="color:var(--loss);font-weight:600">Contas a Pagar</td>${linhas.map(l=>`<td class="r">${cell(l.pagar)}</td>`).join("")}<td class="r" style="font-weight:700">${brl(totP)}</td></tr>
+      <tr style="border-top:1px solid var(--line)"><td class="sticky-col" style="font-weight:700">Geração de Caixa</td>${linhas.map(l=>`<td class="r ${l.geracao>=0?"pos":"neg"}" style="font-weight:700">${cell(l.geracao)}</td>`).join("")}<td class="r ${totG>=0?"pos":"neg"}" style="font-weight:700">${brl(totG)}</td></tr>
+    </tbody></table></div></div>
+  <div class="card"><div class="card-title">Contas a Receber vs. Contas a Pagar</div>
+    <div style="display:flex;gap:18px;margin:8px 0;font-size:12px;color:var(--inkSoft)"><span><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--blue);margin-right:5px"></span>A Receber</span><span><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--loss);margin-right:5px"></span>A Pagar</span></div>
+    ${cgChartSVG(linhas)}</div>`;
+}
+function cgChartSVG(linhas){
+  const rec=linhas.map(l=>l.receber),pag=linhas.map(l=>l.pagar);
+  const all=[...rec,...pag,0],min=Math.min(...all),max=Math.max(...all),range=(max-min)||1;
+  const w=720,h=200,pL=8,pR=8,pT=10,pB=22,pw=w-pL-pR,ph=h-pT-pB;
+  const x=i=>pL+pw*(i/11),y=v=>pT+ph*(1-(v-min)/range);
+  const line=arr=>arr.map((v,i)=>`${x(i)},${y(v)}`).join(" ");
+  return `<svg viewBox="0 0 ${w} ${h}" style="width:100%;height:auto"><line x1="${pL}" y1="${y(0)}" x2="${w-pR}" y2="${y(0)}" stroke="var(--line)" stroke-dasharray="4 4"/><polyline points="${line(rec)}" fill="none" stroke="var(--blue)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/><polyline points="${line(pag)}" fill="none" stroke="var(--loss)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>${rec.map((v,i)=>`<circle cx="${x(i)}" cy="${y(v)}" r="3" fill="var(--blue)"/>`).join("")}${pag.map((v,i)=>`<circle cx="${x(i)}" cy="${y(v)}" r="3" fill="var(--loss)"/>`).join("")}${MESES.map((m,i)=>`<text x="${x(i)}" y="${h-5}" fill="#5C6479" font-size="9" text-anchor="middle" font-family="Inter,sans-serif">${m}</text>`).join("")}</svg>`;
+}
+
+/* ===== RESUMO MENSAL ===== */
+function resumoMensalHTML(){
+  const linhas=resumoMensal(state.rmAno),vals=linhas.map(l=>l.resultado);
+  const totRes=vals.reduce((a,b)=>a+b,0),totOps=linhas.reduce((s,l)=>s+l.count,0),totW=linhas.reduce((s,l)=>s+l.wins,0);
+  const comOps=linhas.map((l,i)=>({...l,i})).filter(l=>l.count>0);
+  const melhor=comOps.length?comOps.reduce((a,b)=>b.resultado>a.resultado?b:a):null;
+  const pior=comOps.length?comOps.reduce((a,b)=>b.resultado<a.resultado?b:a):null;
+  const max=Math.max(...vals),min=Math.min(...vals),range=(max-min)||1;
+  const w=720,h=200,pT=10,pB=22,pX=8,pw=w-pX*2,ph=h-pT-pB,gap=pw/12,bw=gap*0.58;
+  const y0=pT+ph*(1-(0-min)/range);
+  const bars=vals.map((v,i)=>{const x=pX+gap*i+(gap-bw)/2,yv=pT+ph*(1-(v-min)/range),top=Math.min(yv,y0),ht=Math.max(2,Math.abs(yv-y0));return `<rect x="${x}" y="${top}" width="${bw}" height="${ht}" rx="2" fill="${v>=0?"var(--gain)":"var(--loss)"}"/>`;}).join("");
+  const labels=MESES.map((m,i)=>`<text x="${pX+gap*i+gap/2}" y="${h-5}" fill="#5C6479" font-size="9" text-anchor="middle" font-family="Inter,sans-serif">${m}</text>`).join("");
+  return `<div class="stat-grid">
+    <div class="stat"><div class="l">Resultado ${state.rmAno}</div><div class="v" style="color:${totRes>0?"var(--gain)":totRes<0?"var(--loss)":"var(--ink)"}">${totRes===0?"—":brl(totRes)}</div><div class="d">${totOps} operações</div></div>
+    <div class="stat"><div class="l">Taxa de acerto</div><div class="v">${totOps?((totW/totOps)*100).toFixed(0)+"%":"—"}</div></div>
+    <div class="stat"><div class="l">Melhor mês</div><div class="v" style="color:var(--gain)">${melhor?brl(melhor.resultado):"—"}</div><div class="d">${melhor?MESES[melhor.i]:""}</div></div>
+    <div class="stat"><div class="l">Pior mês</div><div class="v" style="color:${pior&&pior.resultado<0?"var(--loss)":"var(--ink)"}">${pior?brl(pior.resultado):"—"}</div><div class="d">${pior?MESES[pior.i]:""}</div></div>
+  </div>
+  <div class="card"><div class="card-title">Resultado por mês — ${state.rmAno}</div><svg viewBox="0 0 ${w} ${h}" style="width:100%;height:auto;margin-top:10px"><line x1="${pX}" y1="${y0}" x2="${w-pX}" y2="${y0}" stroke="var(--line)"/>${bars}${labels}</svg></div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Mês</th><th class="r">Operações</th><th class="r">Acerto</th><th class="r">Resultado</th></tr></thead>
+    <tbody>${linhas.map((l,i)=>`<tr><td>${MESES[i]}</td><td class="r ${l.count?"":"cell-muted"}">${l.count||"—"}</td><td class="r ${l.count?"":"cell-muted"}">${l.count?l.acerto.toFixed(0)+"%":"—"}</td><td class="r ${l.resultado>0?"pos":l.resultado<0?"neg":"cell-muted"}" style="font-weight:700">${l.resultado===0?"—":brl(l.resultado)}</td></tr>`).join("")}</tbody>
+    <tfoot><tr><td>Total</td><td class="r">${totOps}</td><td class="r">${totOps?((totW/totOps)*100).toFixed(0)+"%":"—"}</td><td class="r ${totRes>=0?"pos":"neg"}">${brl(totRes)}</td></tr></tfoot>
+  </table></div>`;
+}
+
+/* ===== POR ATIVO ===== */
+function porAtivoHTML(){
+  const dados=ASSETS.map(a=>{const ts=state.trades.filter(t=>t.ativo===a);if(!ts.length)return{a,s:null};const vs=ts.map(tradeValor),wins=vs.filter(v=>v>0),losses=vs.filter(v=>v<0),avgG=wins.length?wins.reduce((x,y)=>x+y,0)/wins.length:0,avgL=losses.length?Math.abs(losses.reduce((x,y)=>x+y,0)/losses.length):0;return{a,s:{count:ts.length,resultado:vs.reduce((a,b)=>a+b,0),acerto:wins.length/vs.length*100,payoff:avgL>0?avgG/avgL:null,avgGain:avgG,avgLoss:avgL,melhor:Math.max(...vs),pior:Math.min(...vs)}};});
+  if(!dados.some(d=>d.s))return `<div class="card"><div class="empty">Nenhuma operação registrada ainda.</div></div>`;
+  const maxAbs=Math.max(1,...dados.filter(d=>d.s).map(d=>Math.abs(d.s.resultado)));
+  return `<div class="grid2">${dados.map(({a,s})=>!s?`<div class="card"><div class="card-title">${a}</div><div class="empty">Sem operações de ${a}.</div></div>`:`<div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center"><div class="card-title">${a}</div><span class="badge ${a==="WIN"?"win":"wdo"}">${a}</span></div>
+    <div style="font-family:var(--fontNum);font-size:30px;font-weight:700;color:${s.resultado>=0?"var(--gain)":"var(--loss)"};margin:8px 0 10px">${brl(s.resultado)}</div>
+    ${[["Operações",s.count],["Taxa de acerto",s.acerto.toFixed(0)+"%"],["Payoff",s.payoff?s.payoff.toFixed(2)+" : 1":"—"],["Média gain",brl(s.avgGain)],["Média loss",brl(s.avgLoss)],["Melhor",brl(s.melhor)],["Pior",brl(s.pior)]].map(([l,v])=>`<div style="display:flex;justify-content:space-between;padding:9px 0;border-top:1px solid var(--lineSoft)"><span class="muted" style="font-size:13px">${l}</span><span style="font-family:var(--fontNum);font-weight:600;font-size:13px">${v}</span></div>`).join("")}
+  </div>`).join("")}</div>
+  <div class="card"><div class="card-title">Comparação de resultado</div><div style="margin-top:12px;display:flex;flex-direction:column;gap:12px">
+    ${dados.filter(d=>d.s).map(({a,s})=>`<div><div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:5px"><span>${a}</span><span style="font-family:var(--fontNum);color:${s.resultado>=0?"var(--gain)":"var(--loss)"}">${brl(s.resultado)}</span></div><div style="background:var(--line);border-radius:99px;height:8px;overflow:hidden"><div style="width:${Math.abs(s.resultado)/maxAbs*100}%;height:100%;border-radius:99px;background:${s.resultado>=0?"var(--gain)":"var(--loss)"}"></div></div></div>`).join("")}
+  </div></div>`;
+}
+
+/* ===== PROJEÇÃO ===== */
+function projecaoHTML(){
+  const c=calc(),p=state.config.projecao,dias=Object.values(porDia()),sug=dias.length?Math.round(dias.reduce((s,d)=>s+d.total,0)/dias.length*21):null;
+  const linhas=projecao(c.saldo),r=state.config.regra,cruz=linhas.find(l=>l.ini<r.ate&&l.fim>=r.ate);
+  return `<div class="card"><div class="card-title">Parâmetros</div>
+    <p class="muted" style="margin:4px 0 14px">Escala: +1 contrato a cada ${brl(r.passoAntes)} até ${brl(r.ate)}, depois a cada ${brl(r.passoDepois)}.</p>
+    <div class="grid2">
+      <div><label class="lbl">Resultado médio mensal (R$)${p.resultadoMensal==null&&sug?" — sugestão do histórico":""}</label><input id="pj-res" class="f" type="number" placeholder="${sug??""}" value="${p.resultadoMensal??""}"></div>
+      <div><label class="lbl">Contratos usados nesse resultado</label><input id="pj-cb" class="f" type="number" value="${p.contratosBase??""}"></div>
+    </div>
+    <div style="margin-top:12px;max-width:180px"><label class="lbl">Meses a projetar</label><input id="pj-meses" class="f" type="number" value="${p.meses}"></div>
+    <button class="btn" id="pj-calc" style="margin-top:16px">Recalcular</button></div>
+  ${linhas.length===0?`<div class="card"><div class="empty">Informe o resultado médio mensal pra gerar a projeção.</div></div>`:
+  `${cruz?`<p style="color:var(--accent);font-size:12.5px;font-weight:600;margin-bottom:8px">A partir do mês ${cruz.mes} o incremento muda pra 1 contrato a cada ${brl(r.passoDepois)}.</p>`:""}
+  <div class="table-wrap"><table>
+    <thead><tr><th>Mês</th><th class="r">Saldo inicial</th><th class="r">Contratos</th><th class="r">Resultado</th><th class="r">Saldo final</th></tr></thead>
+    <tbody>${linhas.map(l=>`<tr><td>${l.mes}</td><td class="r">${brl(l.ini)}</td><td class="r">${l.contratos}</td><td class="r ${l.res>=0?"pos":"neg"}" style="font-weight:700">${brl(l.res)}</td><td class="r" style="font-weight:700">${brl(l.fim)}</td></tr>`).join("")}</tbody>
+  </table></div>`}`;
+}
+
+/* ===== CONFIG ===== */
+function configHTML(){
+  const c=state.config,r=c.regra,b=c.blindagem;
+  const num=(id,val,step)=>`<input id="${id}" class="f" type="number" ${step?`step="${step}"`:""}  value="${val}">`;
+  return `<div class="grid2">${ASSETS.map(a=>`<div class="card"><div class="card-title">${a}</div><div style="margin-top:14px;display:grid;grid-template-columns:1fr 1fr;gap:12px">
+    <div><label class="lbl">Valor do ponto (R$)</label>${num("cfg-vp-"+a,c.valorPonto[a],"0.01")}</div>
+    <div><label class="lbl">Contratos padrão</label>${num("cfg-cp-"+a,c.contratosPadrao[a])}</div>
+    <div><label class="lbl">Stop gain (pts)</label>${num("cfg-sg-"+a,c.stopGain[a])}</div>
+    <div><label class="lbl">Stop loss (pts)</label>${num("cfg-sl-"+a,c.stopLoss[a])}</div>
+    <div><label class="lbl">Custo por contrato (R$)</label>${num("cfg-ct-"+a,c.custoContrato[a],"0.01")}</div>
+  </div></div>`).join("")}</div>
+  <div class="grid2">
+    <div class="card"><div class="card-title">Blindagem Operacional</div><div style="margin-top:14px;display:flex;flex-direction:column;gap:12px">
+      <div><label class="lbl">Máximo de stops por dia</label>${num("cfg-bl-stops",b.maxStops)}</div>
+      <div><label class="lbl">Máximo de operações por dia</label>${num("cfg-bl-ops",b.maxOps)}</div>
+      <div><label class="lbl">Horário limite de entradas (hora)</label>${num("cfg-bl-hora",b.limiteHora)}</div>
+    </div></div>
+    <div class="card"><div class="card-title">Regra de contratos e imposto</div><div style="margin-top:14px;display:flex;flex-direction:column;gap:12px">
+      <div><label class="lbl">+1 contrato a cada (R$)</label>${num("cfg-passoA",r.passoAntes)}</div>
+      <div><label class="lbl">Muda ao atingir (R$)</label>${num("cfg-ate",r.ate)}</div>
+      <div><label class="lbl">Depois, a cada (R$)</label>${num("cfg-passoD",r.passoDepois)}</div>
+      <div><label class="lbl">Imposto (%)</label>${num("cfg-imposto",c.imposto,"0.1")}</div>
+    </div></div>
+  </div>
+  <button class="btn" id="cfg-salvar">Salvar configurações</button>
+  <span id="cfg-ok" style="margin-left:14px;color:var(--accent);font-size:13px;font-weight:600"></span>`;
+}
+
+/* ===== MODAL ===== */
+function modalHTML(){
+  if(state.modal==="operacao"){
+    return `<div class="overlay" id="ov"><div class="modal"><h3>Registrar Operação</h3>
+      <div class="modal-grid"><div class="modal-row"><label class="lbl">Data</label><input id="m-data" class="f" type="date" value="${todayISO()}"></div><div class="modal-row"><label class="lbl">Horário</label><input id="m-hora" class="f" type="time" value="${String(new Date().getHours()).padStart(2,"0")}:${String(new Date().getMinutes()).padStart(2,"0")}"></div></div>
+      <div class="modal-grid3"><div class="modal-row"><label class="lbl">C / V</label><select id="m-cv" class="f"><option value="C">C — Compra</option><option value="V">V — Venda</option></select></div><div class="modal-row"><label class="lbl">Ativo</label><select id="m-ativo" class="f">${ASSETS.map(a=>`<option>${a}</option>`).join("")}</select></div><div class="modal-row"><label class="lbl">Gráfico</label><select id="m-graf" class="f">${GRAFICOS.map(g=>`<option>${g}</option>`).join("")}</select></div></div>
+      <div class="modal-grid"><div class="modal-row"><label class="lbl">Região</label><select id="m-reg" class="f"><option value="">—</option>${REGIOES.map(r=>`<option>${r}</option>`).join("")}</select></div><div class="modal-row"><label class="lbl">Setup / Gatilho</label><select id="m-setup" class="f"><option value="">— sem setup —</option>${SETUPS.map(s=>`<option>${s}</option>`).join("")}</select></div></div>
+      <div class="modal-row"><label class="lbl">Estrutura detalhada (opcional)</label><input id="m-estrutura" class="f" type="text" placeholder="ex: topo duplo, falha de rompimento..."></div>
+      <div class="modal-grid"><div class="modal-row"><label class="lbl">Pontos (+/-)</label><input id="m-pontos" class="f" type="number" placeholder="ex: -120"></div><div class="modal-row"><label class="lbl">Contratos</label><input id="m-contratos" class="f" type="number" placeholder="${state.config.contratosPadrao.WIN}"></div></div>
+      <div class="modal-row"><label class="lbl">Nota (opcional)</label><input id="m-nota" class="f" type="text" placeholder="observação do trade"></div>
+      <div id="m-err" class="err"></div>
+      <div class="modal-foot"><button class="btn-ghost" id="m-cancel">Cancelar</button><button class="btn" id="m-save">Salvar operação</button></div>
+    </div></div>`;
+  }
+  return `<div class="overlay" id="ov"><div class="modal"><h3>Nova movimentação</h3>
+    <div class="modal-row"><label class="lbl">Tipo</label><div class="seg-inline" style="width:100%"><button type="button" id="m-tp-ap" class="on" style="flex:1">Aporte</button><button type="button" id="m-tp-re" style="flex:1">Retirada</button></div></div>
+    <div class="modal-grid"><div class="modal-row"><label class="lbl">Data</label><input id="m-data" class="f" type="date" value="${todayISO()}"></div><div class="modal-row"><label class="lbl">Valor (R$)</label><input id="m-valor" class="f" type="number" placeholder="ex: 1000"></div></div>
+    <div class="modal-row"><label class="lbl">Nota (opcional)</label><input id="m-nota" class="f" type="text"></div>
+    <div id="m-err" class="err"></div>
+    <div class="modal-foot"><button class="btn-ghost" id="m-cancel">Cancelar</button><button class="btn" id="m-save">Salvar</button></div>
+  </div></div>`;
+}
+
+/* ===== EVENTOS ===== */
+function liga(){
+  document.querySelectorAll("[data-view]").forEach(b=>b.onclick=()=>{state.view=b.dataset.view;state.sideOpen=false;render();});
+  document.querySelectorAll("[data-group]").forEach(b=>b.onclick=()=>{state.openGroups[b.dataset.group]=!state.openGroups[b.dataset.group];render();});
+  const nav_ex=el("nav-export");if(nav_ex)nav_ex.onclick=exportCSV;
+  const nav_sr=el("nav-sair");if(nav_sr)nav_sr.onclick=sair;
+  const hamb=el("hamb");if(hamb)hamb.onclick=()=>{state.sideOpen=!state.sideOpen;render();};
+  const bd=el("backdrop");if(bd)bd.onclick=()=>{state.sideOpen=false;render();};
+  document.querySelectorAll("[data-filtro]").forEach(b=>b.onclick=()=>{state.filtroAtivo=b.dataset.filtro;render();});
+  const add_op=el("add-op");if(add_op)add_op.onclick=()=>{state.modal="operacao";render();};
+  const add_mov=el("add-mov");if(add_mov)add_mov.onclick=()=>{state.modal="movimentacao";state._movTipo="aporte";render();};
+  const cgp=el("cg-proj");if(cgp)cgp.onchange=()=>{state.cgProjecao=cgp.checked;render();};
+  const cgprev=el("cg-prev");if(cgprev)cgprev.onclick=()=>{state.cgAno--;render();};
+  const cgnext=el("cg-next");if(cgnext)cgnext.onclick=()=>{state.cgAno++;render();};
+  const rmprev=el("rm-prev");if(rmprev)rmprev.onclick=()=>{state.rmAno--;render();};
+  const rmnext=el("rm-next");if(rmnext)rmnext.onclick=()=>{state.rmAno++;render();};
+  document.querySelectorAll("[data-del-trade]").forEach(b=>b.onclick=()=>delTrade(b.dataset.delTrade));
+  document.querySelectorAll("[data-del-mov]").forEach(b=>b.onclick=()=>delMov(b.dataset.delMov));
+  const pj=el("pj-calc");if(pj)pj.onclick=async()=>{const res=el("pj-res").value;state.config.projecao={resultadoMensal:res===""?null:parseFloat(res)||null,contratosBase:parseFloat(el("pj-cb").value)||1,meses:parseInt(el("pj-meses").value,10)||12};await salvarConfig();render();};
+  const cs=el("cfg-salvar");if(cs)cs.onclick=async()=>{
+    const g=(id,old)=>{const v=parseFloat(el(id).value);return isNaN(v)?old:v;};
+    for(const a of ASSETS){state.config.valorPonto[a]=g("cfg-vp-"+a,state.config.valorPonto[a]);state.config.contratosPadrao[a]=g("cfg-cp-"+a,state.config.contratosPadrao[a]);state.config.stopGain[a]=g("cfg-sg-"+a,state.config.stopGain[a]);state.config.stopLoss[a]=g("cfg-sl-"+a,state.config.stopLoss[a]);state.config.custoContrato[a]=g("cfg-ct-"+a,state.config.custoContrato[a]);}
+    state.config.imposto=g("cfg-imposto",state.config.imposto);state.config.regra.passoAntes=g("cfg-passoA",state.config.regra.passoAntes);state.config.regra.ate=g("cfg-ate",state.config.regra.ate);state.config.regra.passoDepois=g("cfg-passoD",state.config.regra.passoDepois);
+    state.config.blindagem.maxStops=g("cfg-bl-stops",state.config.blindagem.maxStops);state.config.blindagem.maxOps=g("cfg-bl-ops",state.config.blindagem.maxOps);state.config.blindagem.limiteHora=g("cfg-bl-hora",state.config.blindagem.limiteHora);
+    await salvarConfig();const ok=el("cfg-ok");if(ok){ok.textContent="Salvo ✓";setTimeout(()=>{if(el("cfg-ok"))el("cfg-ok").textContent="";},1800);}
+  };
+  const ov=el("ov");
+  if(ov){
+    ov.addEventListener("mousedown",e=>{if(e.target===ov){state.modal=null;render();}});
+    const cancel=el("m-cancel");if(cancel)cancel.onclick=()=>{state.modal=null;render();};
+    if(state.modal==="movimentacao"){const ap=el("m-tp-ap"),re=el("m-tp-re");const setT=t=>{state._movTipo=t;ap.classList.toggle("on",t==="aporte");re.classList.toggle("on",t==="retirada");};if(ap)ap.onclick=()=>setT("aporte");if(re)re.onclick=()=>setT("retirada");}
+    const sv=el("m-save");
+    if(sv)sv.onclick=async()=>{
+      const err=el("m-err");err.textContent="";
+      if(state.modal==="operacao"){
+        const pontos=parseFloat(el("m-pontos").value),contratos=parseInt(el("m-contratos").value)||state.config.contratosPadrao[el("m-ativo").value];
+        if(isNaN(pontos)||pontos===0){err.textContent="Informe os pontos (positivo = gain, negativo = loss).";return;}
+        if(!contratos||contratos<=0){err.textContent="Informe os contratos.";return;}
+        sv.disabled=true;
+        const ok=await addTrade({data:el("m-data").value,horario:el("m-hora").value,cv:el("m-cv").value,ativo:el("m-ativo").value,grafico:el("m-graf").value,regiao:el("m-reg").value,setup:el("m-setup").value,estrutura:(el("m-estrutura").value||"").trim(),pontos,contratos,nota:(el("m-nota").value||"").trim()});
+        if(ok){state.modal=null;render();}else sv.disabled=false;
+      }else{
+        const valor=parseFloat(el("m-valor").value);
+        if(isNaN(valor)||valor<=0){err.textContent="Informe um valor maior que zero.";return;}
+        sv.disabled=true;
+        const ok=await addMov({data:el("m-data").value,tipo:state._movTipo||"aporte",valor,nota:(el("m-nota").value||"").trim()});
+        if(ok){state.modal=null;render();}else sv.disabled=false;
+      }
+    };
+  }
+}
+
+/* ===== CSV ===== */
+function exportCSV(){
+  const linhas=[["tipo","data","horario","cv","ativo","regiao","estrutura","setup","grafico","pontos","contratos","valor_reais","nota"]];
+  for(const t of state.trades)linhas.push(["operacao",t.data,t.horario||"",t.cv||"",t.ativo,t.regiao||"",t.estrutura||"",t.setup||"",t.grafico||"",t.pontos,t.contratos,tradeValor(t).toFixed(2),t.nota||""]);
+  for(const m of state.movs)linhas.push(["movimentacao",m.data,"","","","","","","","","",Number(m.valor).toFixed(2),m.nota||""]);
+  const csv=linhas.map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(",")).join("\n");
+  try{const blob=new Blob(["﻿"+csv],{type:"text/csv;charset=utf-8"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`gestao-milionaria-${todayISO()}.csv`;a.click();}
+  catch(e){alert("Export indisponível neste ambiente.");}
+}
+
+/* ===== BOOT ===== */
+el("lg-entrar").onclick=entrar;
+el("lg-criar").onclick=criarConta;
+el("lg-pass").addEventListener("keydown",e=>{if(e.key==="Enter")entrar();});
+
+db.auth.onAuthStateChange((_e,session)=>{
+  if(session?.user){
+    state.user=session.user;
+    el("login-wrap").style.display="none";
+    el("app").style.display="flex";
+    if(!state.loaded)carregar();
+  }else{
+    state.user=null;state.loaded=false;state.trades=[];state.movs=[];
+    el("app").style.display="none";
+    el("login-wrap").style.display="flex";
+  }
+});
+db.auth.getSession().then(({data})=>{
+  if(data.session?.user){state.user=data.session.user;el("login-wrap").style.display="none";el("app").style.display="flex";carregar();}
+  else{el("login-wrap").style.display="flex";}
+});
