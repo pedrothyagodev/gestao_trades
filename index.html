@@ -157,26 +157,8 @@
 </head>
 <body>
 
-<!-- LOGIN -->
-<div id="login-wrap" class="login-wrap" style="display:none">
-  <div class="login-card">
-    <div class="login-brand">
-      <div class="login-mark">GM</div>
-      <div class="login-name">Gestão Milionária</div>
-    </div>
-    <p class="login-sub">Seu diário de trades sincronizado entre PC e celular.</p>
-    <div style="margin-bottom:12px"><label class="lbl">E-mail</label><input id="lg-email" class="f" type="email" placeholder="voce@email.com" autocomplete="email"></div>
-    <div style="margin-bottom:18px"><label class="lbl">Senha</label><input id="lg-pass" class="f" type="password" placeholder="mínimo 6 caracteres" autocomplete="current-password"></div>
-    <div style="display:flex;gap:10px">
-      <button id="lg-entrar" class="btn" style="flex:1;justify-content:center">Entrar</button>
-      <button id="lg-criar" class="btn-ghost" style="flex:1">Criar conta</button>
-    </div>
-    <div id="lg-err" class="err"></div>
-  </div>
-</div>
-
 <!-- APP -->
-<div id="app" style="display:none"><div class="loading">carregando…</div></div>
+<div id="app" style="display:flex"><div class="loading">carregando…</div></div>
 <div id="modal-mount"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -185,6 +167,8 @@
 const SUPABASE_URL = "https://ntynkqgnkrguritejpns.supabase.co";
 const SUPABASE_KEY = "sb_publishable_g2X8h2Rl5LR-4k6MPYbNVQ_jX11aRbB";
 const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+const ALLOWED_EMAIL = "pedro_thyago@icloud.com";
+const PW_KEY = "gm_pw";
 
 /* ===================== CONSTANTES ===================== */
 const SETUPS=["132","EST-1B","EST-0B","3x3","Caixa","REV-2-1-1","REV-3-2-1","CONT-2-2-1-1","Yin Yang","Falh-Cont","CONT-03","FALH-CORR","FALH-2REV","PRO GAIN","ROMP-FAL"];
@@ -244,27 +228,6 @@ function ordena(a,b){return a.data<b.data?-1:a.data>b.data?1:(a.ts<b.ts?-1:1);}
 function contratosParaBanca(b){const r=state.config.regra;if(b<=0)return 0;if(b<=r.ate)return Math.max(1,Math.floor(b/r.passoAntes));return Math.floor(r.ate/r.passoAntes)+Math.floor((b-r.ate)/r.passoDepois);}
 
 /* ===================== AUTH ===================== */
-async function entrar(){
-  const email=el("lg-email").value.trim(),password=el("lg-pass").value;
-  el("lg-err").textContent="";
-  if(!email||!password){el("lg-err").textContent="Preencha e-mail e senha.";return;}
-  const{error}=await db.auth.signInWithPassword({email,password});
-  if(error)el("lg-err").textContent=traduzErro(error.message);
-}
-async function criarConta(){
-  const email=el("lg-email").value.trim(),password=el("lg-pass").value;
-  el("lg-err").textContent="";
-  if(!email||password.length<6){el("lg-err").textContent="E-mail e senha com ao menos 6 caracteres.";return;}
-  const{data,error}=await db.auth.signUp({email,password});
-  if(error){el("lg-err").textContent=traduzErro(error.message);return;}
-  if(data.user&&!data.session){el("lg-err").style.color="var(--accent)";el("lg-err").textContent="Conta criada! Entre com suas credenciais.";}
-}
-function traduzErro(m){
-  if(/Invalid login/i.test(m))return "E-mail ou senha incorretos.";
-  if(/already registered/i.test(m))return "Este e-mail já tem conta. É só entrar.";
-  if(/rate limit/i.test(m))return "Muitas tentativas. Aguarde um momento.";
-  return m;
-}
 async function sair(){await db.auth.signOut();}
 
 /* ===================== DADOS ===================== */
@@ -767,26 +730,45 @@ function exportCSV(){
   catch(e){alert("Export indisponível neste ambiente.");}
 }
 
-/* ===== BOOT ===== */
-el("lg-entrar").onclick=entrar;
-el("lg-criar").onclick=criarConta;
-el("lg-pass").addEventListener("keydown",e=>{if(e.key==="Enter")entrar();});
-
+/* ===================== BOOT ===================== */
+async function autoLogin(){
+  let pw;
+  try{pw=localStorage.getItem(PW_KEY);}catch(e){}
+  if(!pw){
+    pw=prompt("Senha de acesso:");
+    if(!pw){el("app").innerHTML=`<div class="loading">Login cancelado. Recarregue a página pra tentar de novo.</div>`;return;}
+  }
+  const{error}=await db.auth.signInWithPassword({email:ALLOWED_EMAIL,password:pw});
+  if(error){
+    try{localStorage.removeItem(PW_KEY);}catch(e){}
+    el("app").innerHTML=`<div class="loading">${esc(traduzErro(error.message))} <br><br><button class="btn" onclick="location.reload()">Tentar de novo</button></div>`;
+    return;
+  }
+  try{localStorage.setItem(PW_KEY,pw);}catch(e){}
+}
+function traduzErro(m){
+  if(/Invalid login/i.test(m))return "Senha incorreta.";
+  if(/rate limit/i.test(m))return "Muitas tentativas. Aguarde um momento.";
+  if(/email not confirmed/i.test(m))return "E-mail ainda não confirmado no Supabase.";
+  return m;
+}
 db.auth.onAuthStateChange((_e,session)=>{
   if(session?.user){
+    if(session.user.email.toLowerCase()!==ALLOWED_EMAIL.toLowerCase()){
+      db.auth.signOut();
+      return;
+    }
     state.user=session.user;
-    el("login-wrap").style.display="none";
     el("app").style.display="flex";
     if(!state.loaded)carregar();
   }else{
     state.user=null;state.loaded=false;state.trades=[];state.movs=[];
-    el("app").style.display="none";
-    el("login-wrap").style.display="flex";
+    autoLogin();
   }
 });
 db.auth.getSession().then(({data})=>{
-  if(data.session?.user){state.user=data.session.user;el("login-wrap").style.display="none";el("app").style.display="flex";carregar();}
-  else{el("login-wrap").style.display="flex";}
+  if(data.session?.user&&data.session.user.email.toLowerCase()===ALLOWED_EMAIL.toLowerCase()){state.user=data.session.user;el("app").style.display="flex";carregar();}
+  else{autoLogin();}
 });
 </script>
 </body>
